@@ -179,16 +179,47 @@ defmodule KafkaEx.ConsumerGroup.Manager do
     {:noreply, state}
   end
 
+  # BPATCH
+  # CJS: Backpatched from Master
+  #
+  # If the heartbeat gets an unrecoverable error.
+  def handle_info(
+        {:EXIT, _heartbeat_timer, {:shutdown, {:error, reason}}},
+        %State{} = state
+      ) do
+    {:stop, {:shutdown, {:error, reason}}, state}
+  end
+
+  # EPATCH
+
   # When terminating, inform the group coordinator that this member is leaving
   # the group so that the group can rebalance without waiting for a session
   # timeout.
-  def terminate(_reason, %State{generation_id: nil, member_id: nil}), do: :ok
 
+  # BPATCH
+  # CJS: Backpatched from Master
+  #
+  def terminate(_reason, %State{generation_id: nil, member_id: nil} = state) do
+    Process.unlink(state.worker_name)
+    KafkaEx.stop_worker(state.worker_name)
+  end
+
+  # EPATCH
+
+  # BPATCH
+  # CJS: Backpatched from Master
+  #
   def terminate(_reason, %State{} = state) do
     {:ok, _state} = leave(state)
     Process.unlink(state.worker_name)
     KafkaEx.stop_worker(state.worker_name)
+
+    # should be at end because of race condition (stop heartbeat while it is shutting down)
+    # if race condition happens, worker will be abandoned
+    stop_heartbeat_timer(state)
   end
+
+  # EPATCH
 
   ### Helpers
 
